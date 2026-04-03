@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WTG Breakdown Report Generator</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .report-box { background: #f9fafb; border: 1px solid #e5e7eb; padding: 15px; border-radius: 8px; margin-bottom: 20px; white-space: pre-wrap; font-family: 'Courier New', Courier, monospace; }
+        .tab-btn.active { border-bottom: 3px solid #2563eb; color: #2563eb; }
+    </style>
+</head>
+<body class="bg-gray-100 p-5">
+
+    <div class="max-w-6xl mx-auto bg-white p-8 rounded-xl shadow-lg">
+        <h1 class="text-3xl font-bold text-gray-800 mb-6 text-center">WTG BD Report Generator ⚡</h1>
+        
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8 border-b pb-6">
+            <div>
+                <label class="block font-semibold mb-2">Master Data Sheet (Lookup)</label>
+                <input type="file" id="masterFile" class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+            </div>
+            <div>
+                <label class="block font-semibold mb-2">Upload 5 Area Sheets (Select all at once)</label>
+                <input type="file" id="areaFiles" multiple class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-green-50 file:text-green-700 hover:file:bg-green-100">
+            </div>
+        </div>
+
+        <div class="flex gap-4 mb-6">
+            <button onclick="processData()" class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 font-bold">Generate Reports</button>
+            <button onclick="clearStorage()" class="bg-red-500 text-white px-6 py-2 rounded-lg hover:bg-red-600">Clear Saved Comments</button>
+        </div>
+
+        <div class="border-b mb-4 flex gap-6 text-sm font-medium">
+            <button class="tab-btn active py-2" onclick="showTab('above6hr')">Above 6hr Status</button>
+            <button class="tab-btn py-2" onclick="showTab('feeder6hr')">Feeder Status</button>
+            <button class="tab-btn py-2" onclick="showTab('stateHead')">State Head Report</button>
+            <button class="tab-btn py-2" onclick="showTab('ceoReport')">CEO Report (10hr+)</button>
+        </div>
+
+        <div id="above6hr" class="report-section">
+            <div class="flex justify-between mb-2">
+                <h2 class="font-bold">TN Above 06 Hrs Stoppage WTGS Status</h2>
+                <button onclick="copyToClipboard('report6')" class="text-blue-500 text-xs">Copy Message</button>
+            </div>
+            <div id="report6" class="report-box">Reports will appear here...</div>
+        </div>
+
+        <div id="feeder6hr" class="report-section hidden">
+            <div class="flex justify-between mb-2">
+                <h2 class="font-bold">TN Above 06 Hrs Stoppage Feeder Status</h2>
+                <button onclick="copyToClipboard('reportFeeder')" class="text-blue-500 text-xs">Copy Message</button>
+            </div>
+            <div id="reportFeeder" class="report-box">Reports will appear here...</div>
+        </div>
+
+        <div id="stateHead" class="report-section hidden">
+            <div class="flex justify-between mb-2">
+                <h2 class="font-bold">State Head Intervention Report</h2>
+                <button onclick="copyToClipboard('reportState')" class="text-blue-500 text-xs">Copy Message</button>
+            </div>
+            <div id="reportState" class="report-box">Reports will appear here...</div>
+        </div>
+
+        <div id="ceoReport" class="report-section hidden">
+            <div class="flex justify-between mb-2">
+                <h2 class="font-bold">CEO Above 10 Hrs WTGs Status</h2>
+                <button onclick="copyToClipboard('reportCEO')" class="text-blue-500 text-xs">Copy Message</button>
+            </div>
+            <div id="reportCEO" class="report-box">Reports will appear here...</div>
+        </div>
+    </div>
+
+    <script>
+        let masterData = {};
+        let wtgLogs = JSON.parse(localStorage.getItem('wtgLogs')) || {}; // Persistent store
+
+        function showTab(tabId) {
+            document.querySelectorAll('.report-section').forEach(s => s.classList.add('hidden'));
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.getElementById(tabId).classList.remove('hidden');
+            event.target.classList.add('active');
+        }
+
+        async function processData() {
+            const masterFile = document.getElementById('masterFile').files[0];
+            const areaFiles = document.getElementById('areaFiles').files;
+
+            if (!masterFile || areaFiles.length === 0) {
+                alert("Machi, Master file and Area files rendu upload pannu!");
+                return;
+            }
+
+            // Load Master Data
+            const mData = await masterFile.arrayBuffer();
+            const mWorkbook = XLSX.read(mData);
+            const mSheet = mWorkbook.Sheets[mWorkbook.SheetNames[0]];
+            const mJson = XLSX.utils.sheet_to_json(mSheet);
+            
+            masterData = {};
+            mJson.forEach(row => {
+                masterData[row['WTG ID'] || row['WTG NO']] = {
+                    capacity: row['Capacity'] || 'N/A',
+                    site: row['Site'] || row['Location'] || 'N/A'
+                };
+            });
+
+            // Load Area Sheets
+            let allWTGs = [];
+            for (let file of areaFiles) {
+                const aData = await file.arrayBuffer();
+                const aWorkbook = XLSX.read(aData);
+                const aSheet = aWorkbook.Sheets[aWorkbook.SheetNames[0]];
+                const aJson = XLSX.utils.sheet_to_json(aSheet);
+                allWTGs = allWTGs.concat(aJson);
+            }
+
+            generateFinalReports(allWTGs);
+        }
+
+        function generateFinalReports(data) {
+            const now = new Date();
+            const dateStr = now.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' });
+            const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+
+            // Filtering Above 6hr and 10hr
+            // Logic: Assume 'Duration' column exists or calculate from 'Stop Time'
+            let above6 = data.filter(d => (d.Duration || 0) >= 6);
+            let above10 = data.filter(d => (d.Duration || 0) >= 10);
+
+            // Group by Area for Template 1
+            let grouped6 = {};
+            above6.forEach(w => {
+                const site = masterData[w.WTG]?.site || "Unknown Area";
+                if (!grouped6[site]) grouped6[site] = [];
+                grouped6[site].push(w);
+            });
+
+            // Template 1 Generator (Above 6hr)
+            let report6 = `TN Above 06 Hrs Stoppage WTGS Status:\nDate : ${dateStr}\nTime : ${timeStr}\nTotal WTG’s : ${above6.length}\n\n`;
+            for (let site in grouped6) {
+                report6 += `${site}\n`;
+                grouped6[site].forEach((w, i) => {
+                    const cap = masterData[w.WTG]?.capacity || "";
+                    report6 += `${i+1}. ${w.WTG} _ ${w.Fault || 'BD'} _ ${cap} _ ${w.StopDate} _ ${w.StopTime} _ ${w.Customer}\n`;
+                });
+                report6 += `\n`;
+            }
+            document.getElementById('report6').innerText = report6;
+
+            // Template 4: CEO Report (Above 10hr)
+            let ceoRep = `Mr. CEO Sir Need Your Intervention Required Below WTG\nAbove 10 Hrs WTGs Status\nTotal WTG’s : ${above10.length}\n\n`;
+            above10.forEach((w, i) => {
+                const site = masterData[w.WTG]?.site || "Unknown";
+                const manualNote = wtgLogs[w.WTG]?.note || w.Remarks || "No Response";
+                const etr = wtgLogs[w.WTG]?.etr || "WIP";
+                ceoRep += `${i+1}. ${w.WTG} _ ${site} _ ${w.Fault} _ ${w.Duration} Hrs  ETR - ${etr}\n`;
+            });
+            document.getElementById('reportCEO').innerText = ceoRep;
+
+            // Update Storage to simulate persistence (In a real app, you'd edit these in a table)
+            localStorage.setItem('wtgLogs', JSON.stringify(wtgLogs));
+        }
+
+        function copyToClipboard(id) {
+            const text = document.getElementById(id).innerText;
+            navigator.clipboard.writeText(text);
+            alert("Report Copied Machi!");
+        }
+
+        function clearStorage() {
+            if(confirm("Ellaa manual comments-um delete aagidum. Ok-va?")) {
+                localStorage.removeItem('wtgLogs');
+                location.reload();
+            }
+        }
+    </script>
+</body>
+</html>
+
